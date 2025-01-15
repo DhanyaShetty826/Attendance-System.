@@ -138,6 +138,212 @@ Step 10: when the database is connected, place the files in directory of the pro
 
 Step11: Then a create a main file in the pycharm as "main.py" and run the code
 
-Code: import cv2 import numpy as np from keras.models import load_model import mysql.connector from datetime import datetime
+Code:
+import cv2
+import numpy as np
+from keras.models import load_model
+import mysql.connector
+from datetime import datetime
+
+# Load the model
+model = load_model("keras_model.h5", compile=False)
+
+# Load the labels
+class_names = open("labels.txt", "r").readlines()
+
+# Connect to MySQL database
+try:
+    conn = mysql.connector.connect(
+        host="localhost",
+        user="divya",  # Your MySQL username
+        password="divyasri@1606",  # Your MySQL password
+        database="attendance_system"  # Your database name
+    )
+    cursor = conn.cursor()
+    print("Database connected successfully.")
+except Exception as e:
+    print(f"Error connecting to database: {e}")
+    exit()
+
+# CAMERA settings
+camera = cv2.VideoCapture(0)
+
+# Check if the camera opened successfully
+if not camera.isOpened():
+    print("Error: Camera not accessible.")
+    exit()
+
+# Helper function to mark attendance
+def mark_attendance(person_name):
+    current_date = datetime.now().strftime('%Y-%m-%d')  # Get today's date
+    current_time = datetime.now().strftime('%H:%M:%S')  # Get current time
+
+    try:
+        # Check if the person has already been marked for the day
+        cursor.execute("SELECT * FROM attendance WHERE person_name = %s AND date = %s", (person_name, current_date))
+        record = cursor.fetchone()
+
+        if record:
+            print(f"Attendance for {person_name} already marked today.")
+        else:
+            # Mark attendance if not already marked for today
+            cursor.execute(""" 
+                INSERT INTO attendance (person_name, attendance, date, time)
+                VALUES (%s, %s, %s, %s)
+            """, (person_name, 1, current_date, current_time))
+            conn.commit()
+            print(f"Attendance marked for {person_name} at {current_time}")
+    except Exception as e:
+        print(f"Error marking attendance: {e}")
+
+# Initialize attendance tracking variables
+last_detected_person = ""
+last_confidence = 0
+already_notified = False  # Ensure it's initialized before use
+
+while True:
+    # Grab the webcam image
+    ret, image = camera.read()
+
+    if not ret:
+        print("Failed to grab image.")
+        break
+
+    # Resize image to match model input
+    image_resized = cv2.resize(image, (224, 224), interpolation=cv2.INTER_AREA)
+    cv2.imshow("Webcam Image", image)
+
+    # Prepare the image for prediction
+    image_array = np.asarray(image_resized, dtype=np.float32).reshape(1, 224, 224, 3)
+    image_array = (image_array / 127.5) - 1  # Normalize image
+
+    # Get predictions (with verbose=0)
+    prediction = model.predict(image_array, verbose=0)
+    index = np.argmax(prediction)
+    class_name = class_names[index].strip()
+    confidence_score = prediction[0][index]
+
+    # If confidence is above 95%, mark attendance
+    if confidence_score > 0.90:
+        if class_name.lower() != "unknown":  # Ensure "unknown" is not marked as present
+            if class_name != last_detected_person:
+                print(f"Detected: {class_name}, Confidence: {confidence_score * 100:.2f}%")
+                mark_attendance(class_name)
+                last_detected_person = class_name
+                last_confidence = confidence_score
+                already_notified = False  # Reset the flag for the new person
+            elif not already_notified:
+                print(f"{class_name} is still in front of the camera.")
+                already_notified = True  # Prevent duplicate notifications
+        else:
+            print(f"Unknown detected, not marking attendance.")
+
+    # Listen to the keyboard for presses (press ESC to exit)
+    keyboard_input = cv2.waitKey(1)
+
+    if keyboard_input == 27:  # ESC key to quit
+        break
+
+# Release resources and close window
+camera.release()
+cv2.destroyAllWindows()
+conn.close()
+
+In a real-time attendance project, several potential errors can arise across different components, from hardware and software integration to algorithmic and database management issues. Below are common expected errors and how to address them:
+
+1. Camera Access Errors
+Error: Error: Camera not accessible or cv2.VideoCapture(0) failed to open camera.
+Cause: The camera is not connected, in use by another application, or permissions are not granted.
+Solution: Ensure the camera is connected and not in use. Check system permissions to allow camera access.
+
+2. Face Detection and Recognition Errors
+Error: Low confidence in recognition, or failure to detect faces.
+Cause: Poor lighting, obstructions, or unusual angles affecting face detection.
+Solution: Improve lighting conditions, ensure the camera is positioned correctly, and consider using more robust face detection algorithms like MTCNN or DLIB.
+
+3. Model Prediction Errors
+Error: ValueError: Input to model has incorrect shape.
+Cause: Mismatch between the input image dimensions and what the model expects.
+Solution: Ensure the image is resized and reshaped to the model’s expected input dimensions before prediction.
+
+4. Database Connection Errors
+Error: mysql.connector.errors.InterfaceError: Can't connect to MySQL server.
+Cause: MySQL server is not running, incorrect connection parameters, or network issues.
+Solution: Verify that the MySQL server is running and that the connection parameters (host, user, password, database) are correct.
+
+5. Duplicate Attendance Entry
+Error: Attendance is marked multiple times for the same person on the same day.
+Cause: Inadequate logic to check for existing attendance records before inserting new ones.
+Solution: Implement a check in the database query to ensure attendance is marked only once per person per day.
+
+6. High CPU/GPU Usage
+Error: System lags or crashes due to high CPU/GPU usage during real-time face recognition.
+Cause: Resource-intensive operations from model inference or image processing.
+Solution: Optimize model size, reduce image resolution, or offload processing to a more powerful machine or use a GPU.
+
+7. Network Issues in Distributed Systems
+Error: Timeout or ConnectionError when connecting to a remote database or server.
+Cause: Network latency or server unavailability.
+Solution: Ensure a stable network connection and consider implementing retry logic or local caching for temporary offline functionality.
+
+8. File I/O Errors
+Error: FileNotFoundError: No such file or directory: 'model.h5' or similar.
+Cause: Missing model or configuration files.
+Solution: Verify file paths and ensure all necessary files are available in the specified locations.
+
+9. Incorrect Label Mapping
+Error: Incorrect name or label is displayed during recognition.
+Cause: Mismatch between the model’s output and the corresponding label.
+Solution: Verify the labels file and ensure it matches the order of classes used during model training.
+
+10. Concurrency Issues
+Error: Race conditions or data inconsistency in multi-threaded or distributed environments.
+Cause: Improper handling of concurrent database access or shared resources.
+Solution: Use proper locking mechanisms or database transactions to handle concurrent access.
+
+11. Memory Leaks
+Error: Gradual increase in memory usage leading to system slowdowns or crashes.
+Cause: Objects such as image frames or database connections not being released properly.
+Solution: Ensure proper cleanup of resources by using context managers or try-finally blocks to release memory and close connections.
+
+12. Version Compatibility Issues
+Error: ImportError or AttributeError due to incompatibility between library versions.
+Cause: Using incompatible versions of dependencies such as TensorFlow, OpenCV, or MySQL connector.
+Solution: Check compatibility between the libraries and ensure that the correct versions are installed.
+
+13. Ethical and Privacy Concerns
+Error: Legal or ethical concerns raised regarding the use of facial recognition technology.
+Cause: Lack of user consent or non-compliance with data protection laws.
+Solution: Implement clear privacy policies, obtain user consent, and ensure compliance with relevant laws such as GDPR.
+
+14. User Interface (UI) Errors
+Error: Unresponsive or malfunctioning UI during operations.
+Cause: Blocking operations in the main UI thread.
+Solution: Use asynchronous operations or separate threads for heavy computations to keep the UI responsive.
+
+
+By anticipating these errors and implementing strategies to handle them, you can create a more robust and reliable real-time attendance system.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
