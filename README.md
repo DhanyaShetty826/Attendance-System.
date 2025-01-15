@@ -52,7 +52,7 @@ Events: Manage entry and attendance at large-scale events or conferences. This r
 
 Step 1: Search in web browser google teachable machine images
 
-![image](https://github.com/user-attachments/assets/260ff775-cf81-4970-a768-62d0b55ea4e3)
+![image](https://github.com/user-attachments/assets/f910e1ce-8457-42ff-a63f-c010b088b33d)
 
 Step2:Click on Teachable Machine
 
